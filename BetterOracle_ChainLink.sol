@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
+
 pragma solidity ^0.8.12;
 
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-contract BetterOracle_ChainLink {
+contract BettingOracle_ChainLink {
     address public developer;
 
     AggregatorV3Interface internal priceFeed;
@@ -23,6 +24,20 @@ contract BetterOracle_ChainLink {
     uint256 public ContractAddresses_Id;
     uint256 public current_ContractAddresses_Id;
 
+    /*
+    struct TokenPrice {
+        uint256 id;
+        address token_address;
+        address ENS_address;
+        uint80 roundID;
+        uint256 Timestamp;
+        int price;
+    }
+
+    mapping(uint256 => TokenPrice) public Token_Price;  
+
+    uint256 public TokenPrice_Id;
+    */
     uint public returned_target_price;
     int256 public target_price;
     uint80 public target_roundID;
@@ -93,8 +108,10 @@ contract BetterOracle_ChainLink {
         address token_address
     ) public returns (AggregatorV3Interface) {
         if (
+            current_ContractAddresses_Id != 0 &&
             token_address_in_contract_addresses[current_ContractAddresses_Id]
-                .token_address == token_address
+                .token_address ==
+            token_address
         ) {
             return
                 token_address_in_contract_addresses[
@@ -113,8 +130,6 @@ contract BetterOracle_ChainLink {
                         .this_priceFeed;
                     current_ContractAddresses_Id = i;
                     priceFeed_exist = true;
-
-                    break;
                 }
             }
 
@@ -198,6 +213,64 @@ contract BetterOracle_ChainLink {
     }
 
     /**
+     * to add last price from ChainLink price feed into struct TokenPrice
+     * parameters:
+     * token_address:supported ERC20 token in the ChainLink_Price_Feed_Contract_Addresses.
+     * returns:
+     * priceFeed.latestRoundData object
+     * uint80 roundID, int price, uint startedAt,uint timeStamp, uint80 answeredInRound
+     */
+    /*
+    function add_last_token_price(address token_address) public returns (uint80, int, uint, uint,uint80) {
+
+        priceFeed = set_ENS_address(token_address);
+
+        (
+            uint80 roundID,
+            int price,
+            uint startedAt,
+            uint timeStamp,
+            uint80 answeredInRound
+        ) = getLatestPrice();
+
+        bool exist = false;
+
+        for (uint256 i = 0; i <= TokenPrice_Id; i++) {
+            
+            if( Token_Price[i].token_address == token_address && Token_Price[i].roundID == roundID ) {
+
+                exist = true;
+
+                break;
+
+            }
+
+        }
+
+        if(exist == false){
+
+            TokenPrice_Id++;
+    
+
+            TokenPrice storage new_Token_Price = Token_Price[TokenPrice_Id];
+            new_Token_Price.id = TokenPrice_Id;
+            new_Token_Price.token_address = token_address_in_contract_addresses[current_ContractAddresses_Id].token_address;
+            new_Token_Price.ENS_address = token_address_in_contract_addresses[current_ContractAddresses_Id].ENS_address;
+            new_Token_Price.roundID = roundID;
+            new_Token_Price.Timestamp = timeStamp;
+            new_Token_Price.price = price;
+
+
+        }
+
+        return (roundID, price, startedAt,timeStamp, answeredInRound );
+
+        
+
+    }
+    */
+
+    /**
      * Returns historical price for a round id.
      * roundId is NOT incremental. Not all roundIds are valid.
      * You must know a valid roundId before consuming historical data.
@@ -264,29 +337,29 @@ contract BetterOracle_ChainLink {
         uint80 next_roundID = roundID;
         uint ENS_address_decimails;
 
+        int next_price;
+        uint next_timeStamp;
+
         while (found == false) {
-            next_roundID--;
-
-            int next_price;
-            uint next_timeStamp;
-
             (next_price, next_timeStamp) = getHistoricalPrice(next_roundID);
+
+            target_price = next_price;
+            target_roundID = next_roundID;
 
             /*find the smallest timestamp_difference, means closest timestamp to the target*/
             if (
-                next_timeStamp > timeStamp &&
+                next_timeStamp <= timeStamp &&
                 next_timeStamp > 0 &&
                 next_price > 0
             ) {
-                target_price = next_price;
-                target_roundID = next_roundID;
-            } else if (next_timeStamp > 0 && next_price > 0) {
-                found = true;
                 ENS_address_decimails = token_address_in_contract_addresses[
                     current_ContractAddresses_Id
                 ].ENS_address_decimails;
+                found = true;
                 break;
             }
+
+            next_roundID--;
         }
 
         /* calculates correct deciamls */
