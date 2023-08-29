@@ -7,5 +7,7 @@ BettingOracle_ChainLink:
 BettingOracle_ChainLink is to connect the oracle service (ChainLink) to provide BettingContract a third-party price data to close betting at BettingContract .
 
 Join BETTER Communities
+
 Discord: better's discord server : https://discord.com/invite/48UdVZNXgB
+
 Twitter: find better on twitter : https://twitter.com/better0y0
