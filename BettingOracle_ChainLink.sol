@@ -1,4 +1,9 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
+//BettingOracle_ChainLink v2.2
+//bsc testnet
+//0x662d18FA18F45fE809131426314b586b9Bc65aB3 brav ac2
+//bsc mainnet
+//0x968d2eD7533ec0703A859ac933420e8a6cce9E54 brav ac2
 
 pragma solidity ^0.8.12;
 
@@ -24,23 +29,11 @@ contract BettingOracle_ChainLink {
     uint256 public ContractAddresses_Id;
     uint256 public current_ContractAddresses_Id;
 
-    /*
-    struct TokenPrice {
-        uint256 id;
-        address token_address;
-        address ENS_address;
-        uint80 roundID;
-        uint256 Timestamp;
-        int price;
-    }
-
-    mapping(uint256 => TokenPrice) public Token_Price;  
-
-    uint256 public TokenPrice_Id;
-    */
     uint public returned_target_price;
     int256 public target_price;
     uint80 public target_roundID;
+
+    uint256 private constant PHASE_OFFSET = 64;
 
     /**
      * Network: Sepolia
@@ -213,64 +206,6 @@ contract BettingOracle_ChainLink {
     }
 
     /**
-     * to add last price from ChainLink price feed into struct TokenPrice
-     * parameters:
-     * token_address:supported ERC20 token in the ChainLink_Price_Feed_Contract_Addresses.
-     * returns:
-     * priceFeed.latestRoundData object
-     * uint80 roundID, int price, uint startedAt,uint timeStamp, uint80 answeredInRound
-     */
-    /*
-    function add_last_token_price(address token_address) public returns (uint80, int, uint, uint,uint80) {
-
-        priceFeed = set_ENS_address(token_address);
-
-        (
-            uint80 roundID,
-            int price,
-            uint startedAt,
-            uint timeStamp,
-            uint80 answeredInRound
-        ) = getLatestPrice();
-
-        bool exist = false;
-
-        for (uint256 i = 0; i <= TokenPrice_Id; i++) {
-            
-            if( Token_Price[i].token_address == token_address && Token_Price[i].roundID == roundID ) {
-
-                exist = true;
-
-                break;
-
-            }
-
-        }
-
-        if(exist == false){
-
-            TokenPrice_Id++;
-    
-
-            TokenPrice storage new_Token_Price = Token_Price[TokenPrice_Id];
-            new_Token_Price.id = TokenPrice_Id;
-            new_Token_Price.token_address = token_address_in_contract_addresses[current_ContractAddresses_Id].token_address;
-            new_Token_Price.ENS_address = token_address_in_contract_addresses[current_ContractAddresses_Id].ENS_address;
-            new_Token_Price.roundID = roundID;
-            new_Token_Price.Timestamp = timeStamp;
-            new_Token_Price.price = price;
-
-
-        }
-
-        return (roundID, price, startedAt,timeStamp, answeredInRound );
-
-        
-
-    }
-    */
-
-    /**
      * Returns historical price for a round id.
      * roundId is NOT incremental. Not all roundIds are valid.
      * You must know a valid roundId before consuming historical data.
@@ -300,6 +235,64 @@ contract BettingOracle_ChainLink {
     }
 
     /**
+     * to calculate phaseId and aggregatorRoundId by roundId
+     */
+    function parseIds(uint256 _roundId) public pure returns (uint16, uint64) {
+        uint16 phaseId = uint16(_roundId >> PHASE_OFFSET);
+        uint64 aggregatorRoundId = uint64(_roundId);
+
+        return (phaseId, aggregatorRoundId);
+    }
+
+    /** to fetch closest round id at specific timestamp from chainlink
+     * parameters:
+     * initial round id : roundID
+     * inital timestamp : last_timestamp
+     * specific timestamp : target_timeStamp
+     * return closest roundid to the target timestamp : target_timeStamp
+     */
+    function fetch_closest_roundID_to_timestamp_by_time_difference_v1(
+        uint80 roundID,
+        uint last_timeStamp,
+        uint target_timeStamp
+    ) public view returns (uint80) {
+        uint80 next_roundID = roundID;
+        uint80 new_roundID;
+        bool found = false;
+        int next_price;
+        uint next_timeStamp = last_timeStamp;
+        uint80 init_deduction = 10000;
+
+        // if current time and end_time is less than 1 hours, 23 minutes and 20 seconds., use v1 algorithm
+        while (found == false) {
+            (next_price, next_timeStamp) = getHistoricalPrice(next_roundID);
+
+            if (next_timeStamp > 0 && next_price > 0) {
+                if (next_timeStamp > target_timeStamp) {
+                    //calculate timestamp difference
+                    uint timestamp_difference = next_timeStamp -
+                        target_timeStamp;
+
+                    if (timestamp_difference < 3000) {
+                        found = true;
+                        break;
+                    } else {
+                        new_roundID = next_roundID;
+                        next_roundID = next_roundID - init_deduction;
+                    }
+                } else {
+                    init_deduction = init_deduction / 10;
+                    next_roundID = new_roundID - init_deduction;
+                }
+            } else {
+                next_roundID = next_roundID - init_deduction / 2;
+            }
+        }
+
+        return next_roundID;
+    }
+
+    /**
      * to fetch the price from ChainLink price feed of specified timeStamp
      * parameters:
      * token_address:supported ERC20 token in the ChainLink_Price_Feed_Contract_Addresses.
@@ -322,6 +315,7 @@ contract BettingOracle_ChainLink {
         uint startedAt;
         uint last_timeStamp;
         uint80 answeredInRound;
+        uint _token_decimails = token_decimails;
 
         /*first get roundID of last price*/
         (
@@ -339,7 +333,19 @@ contract BettingOracle_ChainLink {
 
         int next_price;
         uint next_timeStamp;
+        uint target_timeStamp = timeStamp;
 
+        uint _time_different = block.timestamp - target_timeStamp;
+
+        if (_time_different >= 3000) {
+            next_roundID = fetch_closest_roundID_to_timestamp_by_time_difference_v1(
+                roundID,
+                last_timeStamp,
+                target_timeStamp
+            );
+        }
+
+        // if current time and end_time is less than 1 hours, 23 minutes and 20 seconds., use v1 algorithm
         while (found == false) {
             (next_price, next_timeStamp) = getHistoricalPrice(next_roundID);
 
@@ -348,7 +354,7 @@ contract BettingOracle_ChainLink {
 
             /*find the smallest timestamp_difference, means closest timestamp to the target*/
             if (
-                next_timeStamp <= timeStamp &&
+                next_timeStamp <= target_timeStamp &&
                 next_timeStamp > 0 &&
                 next_price > 0
             ) {
@@ -363,7 +369,7 @@ contract BettingOracle_ChainLink {
         }
 
         /* calculates correct deciamls */
-        uint correct_decimals = token_decimails - ENS_address_decimails;
+        uint correct_decimals = _token_decimails - ENS_address_decimails;
         returned_target_price = uint(target_price) * (10 ** correct_decimals);
 
         return (returned_target_price, target_roundID);
