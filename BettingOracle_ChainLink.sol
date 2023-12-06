@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
-//BettingOracle_ChainLink v2.2
+//BettingOracle_ChainLink v2.3
 //bsc testnet
 //0x662d18FA18F45fE809131426314b586b9Bc65aB3 brav ac2
 //bsc mainnet
 //0x968d2eD7533ec0703A859ac933420e8a6cce9E54 brav ac2
+//ethereum mainnet
+//0xd69AA2fe7B8711caaFd7ACaf7bB33552E171fEf9 brav ac2
+//sepolia testnet
+//0x59E9e16B947435971DB4A81193AcefC5368eA7Ca fire real
+//0xFcB649161b66a6059CAFec9f2ad6eA43bb23bC2B fire real
 
 pragma solidity ^0.8.12;
 
@@ -35,6 +40,13 @@ contract BettingOracle_ChainLink {
 
     uint256 private constant PHASE_OFFSET = 64;
 
+    //round_id deduction adjustment
+    /**
+     * bsc mainnet = 10000
+     * ethereum mainnet = 2000
+     */
+    uint80 _deduction;
+
     /**
      * Network: Sepolia
      * Aggregator: ETH/USD
@@ -50,8 +62,23 @@ contract BettingOracle_ChainLink {
      * Aggregator: USDC / USD
      * Address: 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E
      */
-    constructor() {
+    constructor(uint80 deduction) {
         developer = msg.sender;
+        _deduction = deduction;
+    }
+
+    /**
+     * to update ChainLink round id deduction to increase the success rates in looping process.
+     * parameters:
+     * deduction: values to deduct in roundid
+     */
+    function update_round_id_deduction(uint80 deduction) public {
+        require(
+            developer == msg.sender,
+            "only developer can update round_id deduction!"
+        );
+
+        _deduction = deduction;
     }
 
     /**
@@ -261,7 +288,7 @@ contract BettingOracle_ChainLink {
         bool found = false;
         int next_price;
         uint next_timeStamp = last_timeStamp;
-        uint80 init_deduction = 10000;
+        uint80 _init_deduction = _deduction;
 
         // if current time and end_time is less than 1 hours, 23 minutes and 20 seconds., use v1 algorithm
         while (found == false) {
@@ -278,14 +305,14 @@ contract BettingOracle_ChainLink {
                         break;
                     } else {
                         new_roundID = next_roundID;
-                        next_roundID = next_roundID - init_deduction;
+                        next_roundID = next_roundID - _init_deduction;
                     }
                 } else {
-                    init_deduction = init_deduction / 10;
-                    next_roundID = new_roundID - init_deduction;
+                    _init_deduction = _init_deduction / 10;
+                    next_roundID = new_roundID - _init_deduction;
                 }
             } else {
-                next_roundID = next_roundID - init_deduction / 2;
+                next_roundID = next_roundID - _init_deduction / 2;
             }
         }
 
