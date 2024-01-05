@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
-//BettingOracle_ChainLink v2.3
+//BettingOracle_ChainLink v2.5
 //bsc testnet
-//0x662d18FA18F45fE809131426314b586b9Bc65aB3 brav ac2
+//0x738fcdA670D1d97a6656640de080591C01ED2281 chro ac1
 //bsc mainnet
-//0x968d2eD7533ec0703A859ac933420e8a6cce9E54 brav ac2
+//0x8aF71fE99f7Ef532dF44c1A157C2Bf70E60eA060 bra ac2
+//0x62F20a5Db2bf22F36EFf3Df8e504A8054648c8cA bra ac2 higher gas limit
 //ethereum mainnet
-//0xd69AA2fe7B8711caaFd7ACaf7bB33552E171fEf9 brav ac2
 //sepolia testnet
-//0x59E9e16B947435971DB4A81193AcefC5368eA7Ca fire real
-//0xFcB649161b66a6059CAFec9f2ad6eA43bb23bC2B fire real
 
 pragma solidity ^0.8.12;
 
@@ -47,6 +45,13 @@ contract BettingOracle_ChainLink {
      */
     uint80 _deduction;
 
+    //ini_timestamp_difference adjustment
+    /**
+     * bsc mainnet = 30
+     * ethereum mainnet = 300
+     */
+    uint _ini_timestamp_difference;
+
     /**
      * Network: Sepolia
      * Aggregator: ETH/USD
@@ -62,9 +67,10 @@ contract BettingOracle_ChainLink {
      * Aggregator: USDC / USD
      * Address: 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E
      */
-    constructor(uint80 deduction) {
+    constructor(uint80 deduction, uint ini_timestamp_difference) {
         developer = msg.sender;
         _deduction = deduction;
+        _ini_timestamp_difference = ini_timestamp_difference;
     }
 
     /**
@@ -79,6 +85,22 @@ contract BettingOracle_ChainLink {
         );
 
         _deduction = deduction;
+    }
+
+    /**
+     * to update initial timestamp difference to increase the success rates in looping process.
+     * parameters:
+     * ini_timestamp_difference: values to set the initial timestamp difference
+     */
+    function update_ini_timestamp_difference(
+        uint ini_timestamp_difference
+    ) public {
+        require(
+            developer == msg.sender,
+            "only developer can update ini_timestamp_difference!"
+        );
+
+        _ini_timestamp_difference = ini_timestamp_difference;
     }
 
     /**
@@ -300,7 +322,7 @@ contract BettingOracle_ChainLink {
                     uint timestamp_difference = next_timeStamp -
                         target_timeStamp;
 
-                    if (timestamp_difference < 3000) {
+                    if (timestamp_difference < _ini_timestamp_difference) {
                         found = true;
                         break;
                     } else {
@@ -308,8 +330,13 @@ contract BettingOracle_ChainLink {
                         next_roundID = next_roundID - _init_deduction;
                     }
                 } else {
-                    _init_deduction = _init_deduction / 10;
-                    next_roundID = new_roundID - _init_deduction;
+                    if (_init_deduction >= 10) {
+                        _init_deduction = _init_deduction / 10;
+                        next_roundID = new_roundID - _init_deduction;
+                    } else {
+                        found = true;
+                        break;
+                    }
                 }
             } else {
                 next_roundID = next_roundID - _init_deduction / 2;
@@ -364,7 +391,7 @@ contract BettingOracle_ChainLink {
 
         uint _time_different = block.timestamp - target_timeStamp;
 
-        if (_time_different >= 3000) {
+        if (_time_different >= _ini_timestamp_difference) {
             next_roundID = fetch_closest_roundID_to_timestamp_by_time_difference_v1(
                 roundID,
                 last_timeStamp,
